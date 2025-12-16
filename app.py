@@ -1,3 +1,4 @@
+%%writefile app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,12 +6,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score  # <--- FITUR BARU
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Dashboard Retail", layout="wide")
+st.set_page_config(page_title="Dashboard Retail + Silhouette", layout="wide")
 
 st.title("🛍️ Clustering & Prediction Dashboard")
 st.caption("Metode: K-Means (Clustering) & Ensemble Learning (Regression)")
@@ -18,13 +20,11 @@ st.caption("Metode: K-Means (Clustering) & Ensemble Learning (Regression)")
 # --- LOAD DATA ---
 @st.cache_data
 def load_data():
-    # Streamlit Cloud akan mencari file ini di GitHub Anda
     try:
-        # Coba baca dengan encoding standar
+        # Streamlit akan membaca file ini dari GitHub
         df = pd.read_csv('data_retail.csv')
         return df
     except UnicodeDecodeError:
-        # Jika gagal, coba encoding lain (biasa terjadi di data retail)
         df = pd.read_csv('data_retail.csv', encoding='unicode_escape')
         return df
     except FileNotFoundError:
@@ -36,13 +36,7 @@ if df is not None:
     # --- 1. PREPROCESSING & RFM ---
     st.sidebar.success("✅ Data Berhasil Dimuat!")
     
-    # Check kolom wajib
-    kolom_wajib = ['CustomerID', 'Quantity', 'UnitPrice', 'InvoiceDate', 'InvoiceNo']
-    if not all(col in df.columns for col in kolom_wajib):
-        st.error(f"Data tidak memiliki kolom wajib: {kolom_wajib}")
-        st.stop()
-
-    # Cleaning sederhana
+    # Cleaning
     df_clean = df.dropna(subset=['CustomerID'])
     df_clean = df_clean[(df_clean['Quantity'] > 0) & (df_clean['UnitPrice'] > 0)]
     df_clean['TotalPrice'] = df_clean['Quantity'] * df_clean['UnitPrice']
@@ -56,7 +50,7 @@ if df is not None:
         'TotalPrice': 'sum'
     }).rename(columns={'InvoiceDate': 'Recency', 'InvoiceNo': 'Frequency', 'TotalPrice': 'Monetary'})
 
-    # Hapus Outlier Ekstrem (Agar grafik tidak gepeng/rusak)
+    # Hapus Outlier (Penting agar grafik bagus)
     Q1 = rfm['Monetary'].quantile(0.05)
     Q3 = rfm['Monetary'].quantile(0.95)
     rfm_filtered = rfm[(rfm['Monetary'] >= Q1) & (rfm['Monetary'] <= Q3)].copy()
@@ -64,29 +58,49 @@ if df is not None:
     st.header("1. Data Overview")
     col1, col2 = st.columns(2)
     col1.metric("Total Customer", len(rfm))
-    col2.metric("Customer (Setelah Filter Outlier)", len(rfm_filtered))
+    col2.metric("Customer (Filter Outlier)", len(rfm_filtered))
 
     # --- 2. CLUSTERING (K-MEANS) ---
     st.markdown("---")
     st.header("2. Clustering (K-Means)")
     
+    # Slider Jumlah Cluster
     k_val = st.slider("Pilih Jumlah Cluster", 2, 5, 3)
     
-    # Scaling & Modeling
+    # Scaling Data
     scaler = StandardScaler()
     rfm_scaled = scaler.fit_transform(rfm_filtered[['Recency', 'Frequency', 'Monetary']])
+    
+    # Jalankan K-Means
     kmeans = KMeans(n_clusters=k_val, random_state=42, n_init=10)
     rfm_filtered['Cluster'] = kmeans.fit_predict(rfm_scaled)
 
-    # Visualisasi
+    # --- FITUR BARU: SILHOUETTE SCORE ---
+    st.subheader("📊 Evaluasi Kualitas Cluster")
+    
+    # Hitung Score
+    score_sil = silhouette_score(rfm_scaled, rfm_filtered['Cluster'])
+    
+    col_score, col_ket = st.columns([1, 3])
+    col_score.metric("Silhouette Score", f"{score_sil:.3f}")
+    
+    with col_ket:
+        if score_sil > 0.5:
+            st.success("✅ **Sangat Bagus!** (Kelompok terpisah jelas).")
+        elif score_sil > 0.25:
+            st.warning("⚠️ **Cukup Oke.** (Kelompok sudah terbentuk, tapi agak berdempetan).")
+        else:
+            st.error("❌ **Kurang Bagus.** (Kelompok tumpang tindih, coba ganti jumlah cluster).")
+
+    # Visualisasi Grafik
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Segmentasi: Recency vs Monetary")
+        st.caption("Grafik: Recency vs Monetary")
         fig, ax = plt.subplots()
         sns.scatterplot(data=rfm_filtered, x='Recency', y='Monetary', hue='Cluster', palette='viridis', ax=ax)
         st.pyplot(fig)
     with c2:
-        st.subheader("Segmentasi: Recency vs Frequency")
+        st.caption("Grafik: Recency vs Frequency")
         fig, ax = plt.subplots()
         sns.scatterplot(data=rfm_filtered, x='Recency', y='Frequency', hue='Cluster', palette='viridis', ax=ax)
         st.pyplot(fig)
@@ -94,16 +108,16 @@ if df is not None:
     # --- 3. REGRESSION (ENSEMBLE) ---
     st.markdown("---")
     st.header("3. Regression (Prediksi Belanja)")
-    st.info("Menggunakan Ensemble Methods untuk memprediksi Total Belanja (Monetary).")
-
+    st.info("Membandingkan algoritma Random Forest vs Gradient Boosting.")
+    
     tipe_model = st.selectbox("Pilih Model:", ["Random Forest", "Gradient Boosting"])
     
     # Split Data
-    X = rfm_filtered[['Recency', 'Frequency']] # Fitur
-    y = rfm_filtered['Monetary']                # Target
+    X = rfm_filtered[['Recency', 'Frequency']]
+    y = rfm_filtered['Monetary']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Training
+    # Training Model
     if tipe_model == "Random Forest":
         model = RandomForestRegressor(n_estimators=100, random_state=42)
     else:
@@ -111,12 +125,11 @@ if df is not None:
     
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
-    
-    # Hasil
     r2 = r2_score(y_test, y_pred)
+    
     st.success(f"Akurasi Model ({tipe_model}): R2 Score = {r2:.4f}")
     
-    # Prediksi Manual
+    # Kalkulator Prediksi Manual
     st.subheader("Coba Prediksi")
     c_input1, c_input2 = st.columns(2)
     with c_input1:
@@ -129,10 +142,4 @@ if df is not None:
         st.metric("Prediksi Total Belanja Nanti ($)", f"{hasil[0]:.2f}")
 
 else:
-    st.warning("⚠️ File 'data_retail.csv' belum ditemukan.")
-    st.markdown("""
-    **Solusi:**
-    1. Pastikan Anda sudah menjalankan 'Sel 1' di Google Colab.
-    2. Download file `data_retail.csv` hasil generate tersebut.
-    3. Upload file tersebut ke Repository GitHub Anda bersama `app.py`.
-    """)
+    st.error("⚠️ File 'data_retail.csv' tidak ditemukan. Pastikan file sudah diupload ke GitHub Anda.")
