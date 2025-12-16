@@ -1,38 +1,3 @@
-import pandas as pd
-from google.colab import files
-import os
-
-print("📂 LANGKAH 1: UPLOAD DATASET (Format .csv atau .xlsx)")
-print("-----------------------------------------------------------")
-uploaded = files.upload()
-
-if len(uploaded) > 0:
-    nama_file_asli = list(uploaded.keys())[0]
-    ext = os.path.splitext(nama_file_asli)[1].lower()
-    print(f"\n⏳ Memproses file: {nama_file_asli}...")
-
-    try:
-        # 1. BACA FILE
-        if ext == '.xlsx':
-            df = pd.read_excel(nama_file_asli)
-        else:
-            df = pd.read_csv(nama_file_asli, encoding='unicode_escape')
-
-        # 2. POTONG DATA JIKA TERLALU BESAR (Supaya muat di GitHub < 25MB)
-        # Kita ambil maksimal 30.000 baris sampel acak (Sudah sangat cukup untuk tugas)
-        if len(df) > 30000:
-            print(f"⚠️ Data terlalu besar ({len(df)} baris). Mengambil sampel 30.000 baris agar aman...")
-            df = df.sample(n=30000, random_state=42)
-        
-        # 3. SIMPAN JADI 'data_retail.csv'
-        df.to_csv('data_retail.csv', index=False)
-        print("✅ SUKSES! File siap digunakan dengan nama 'data_retail.csv'.")
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-else:
-    print("❌ Anda belum mengupload file.")
-
 import streamlit as st
 import pandas as pd
 import numpy as np
