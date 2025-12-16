@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score 
+from sklearn.metrics import silhouette_score  
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Dashboard Retail + Silhouette", layout="wide")
+st.set_page_config(page_title="Dashboard Retail", layout="wide")
 
 st.title("🛍️ Clustering & Prediction Dashboard")
 st.caption("Metode: K-Means (Clustering) & Ensemble Learning (Regression)")
@@ -36,13 +36,13 @@ if df is not None:
     # --- 1. PREPROCESSING & RFM ---
     st.sidebar.success("✅ Data Berhasil Dimuat!")
     
-    # Cleaning
+    # Cleaning Data
     df_clean = df.dropna(subset=['CustomerID'])
     df_clean = df_clean[(df_clean['Quantity'] > 0) & (df_clean['UnitPrice'] > 0)]
     df_clean['TotalPrice'] = df_clean['Quantity'] * df_clean['UnitPrice']
     df_clean['InvoiceDate'] = pd.to_datetime(df_clean['InvoiceDate'])
 
-    # Buat RFM
+    # Buat RFM (Recency, Frequency, Monetary)
     snapshot_date = df_clean['InvoiceDate'].max() + pd.Timedelta(days=1)
     rfm = df_clean.groupby('CustomerID').agg({
         'InvoiceDate': lambda x: (snapshot_date - x.max()).days,
@@ -50,7 +50,7 @@ if df is not None:
         'TotalPrice': 'sum'
     }).rename(columns={'InvoiceDate': 'Recency', 'InvoiceNo': 'Frequency', 'TotalPrice': 'Monetary'})
 
-    # Hapus Outlier (Penting agar grafik bagus)
+    # Hapus Outlier (Penting agar grafik bagus & Silhouette Score valid)
     Q1 = rfm['Monetary'].quantile(0.05)
     Q3 = rfm['Monetary'].quantile(0.95)
     rfm_filtered = rfm[(rfm['Monetary'] >= Q1) & (rfm['Monetary'] <= Q3)].copy()
@@ -58,20 +58,19 @@ if df is not None:
     st.header("1. Data Overview")
     col1, col2 = st.columns(2)
     col1.metric("Total Customer", len(rfm))
-    col2.metric("Customer (Filter Outlier)", len(rfm_filtered))
+    col2.metric("Customer (Setelah Filter)", len(rfm_filtered))
 
     # --- 2. CLUSTERING (K-MEANS) ---
     st.markdown("---")
     st.header("2. Clustering (K-Means)")
     
-    # Slider Jumlah Cluster
+    # Slider
     k_val = st.slider("Pilih Jumlah Cluster", 2, 5, 3)
     
-    # Scaling Data
+    # Scaling & Modeling
     scaler = StandardScaler()
     rfm_scaled = scaler.fit_transform(rfm_filtered[['Recency', 'Frequency', 'Monetary']])
     
-    # Jalankan K-Means
     kmeans = KMeans(n_clusters=k_val, random_state=42, n_init=10)
     rfm_filtered['Cluster'] = kmeans.fit_predict(rfm_scaled)
 
@@ -88,11 +87,11 @@ if df is not None:
         if score_sil > 0.5:
             st.success("✅ **Sangat Bagus!** (Kelompok terpisah jelas).")
         elif score_sil > 0.25:
-            st.warning("⚠️ **Cukup Oke.** (Kelompok sudah terbentuk, tapi agak berdempetan).")
+            st.warning("⚠️ **Cukup Oke.** (Kelompok terbentuk, agak berdempetan - Wajar untuk data Retail).")
         else:
             st.error("❌ **Kurang Bagus.** (Kelompok tumpang tindih, coba ganti jumlah cluster).")
 
-    # Visualisasi Grafik
+    # Visualisasi
     c1, c2 = st.columns(2)
     with c1:
         st.caption("Grafik: Recency vs Monetary")
@@ -117,7 +116,7 @@ if df is not None:
     y = rfm_filtered['Monetary']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Training Model
+    # Training
     if tipe_model == "Random Forest":
         model = RandomForestRegressor(n_estimators=100, random_state=42)
     else:
@@ -129,7 +128,7 @@ if df is not None:
     
     st.success(f"Akurasi Model ({tipe_model}): R2 Score = {r2:.4f}")
     
-    # Kalkulator Prediksi Manual
+    # Prediksi Manual
     st.subheader("Coba Prediksi")
     c_input1, c_input2 = st.columns(2)
     with c_input1:
